@@ -1,0 +1,149 @@
+---
+title: "Análisis de Datos Panel"
+author: "Derek Martell"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+    fig_crop: false
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Introducción
+En este análisis se utiliza un modelo de datos panel para estudiar los determinantes del PIB per cápita en una muestra de países. Usaremos tres tipos de modelos: Pooled OLS, Efectos Fijos y Efectos Aleatorios, y luego evaluaremos cuál se ajusta mejor a los datos.
+# Carga de librerías
+
+```{r}
+library(plm)      # Modelos de datos panel
+library(readxl)   # Para lectura de archivos Excel (no usado aquí, pero puede ser útil)
+
+```
+
+# Importación de datos
+```{r}
+# Ruta del archivo CSV
+path <- "C:/eco-poli/TRABAJO FINAL/CÓDIGO EN R/merged_df_sin_ecuador.csv"
+df <- read.csv(path)
+
+```
+
+# Conversión a estructura panel
+```{r}
+df <- pdata.frame(df, index = c("Country", "Index.Year"))
+
+```
+- Se especifica que los datos están organizados por país y año.
+
+# Análisis exploratorio
+```{r}
+hist(df$gdp, main = "Distribución de gdp", col = "skyblue")
+
+```
+
+- El histograma muestra la distribución del PIB per cápita. Suele ser sesgada, por lo que aplicamos una transformación logarítmica.
+
+```{r}
+df$lngdp <- log(df$gdp)
+hist(df$lngdp, main = "Distribución de log(gdp)", col = "skyblue")
+
+```
+
+- El logaritmo ayuda a normalizar la distribución.
+
+# Correlación entre variables explicativas
+
+```{r}
+cor(df[, c("capi", "art", "labor", "Overall.Score")])
+
+```
+
+- Se evalúa multicolinealidad. Correlaciones altas podrían afectar la estimación.
+
+# VIF
+```{r}
+library(car)
+# Creamos un modelo lineal simple (sin estructura de panel) solo para evaluar multicolinealidad
+lm_model <- lm(gdp ~ capi + art + labor + Overall.Score, data = df)
+
+# Calculamos el VIF
+vif(lm_model)
+
+```
+
+
+
+# Modelo Pooled (OLS)
+```{r}
+reg_pool <- plm(lngdp ~ capi + art + labor + Overall.Score, data = df, model = "pooling")
+summary(reg_pool)
+
+```
+
+- Asume que no hay efectos no observados entre países o años.
+
+- Los coeficientes muestran el impacto marginal de cada variable sobre el PIB per cápita.
+
+- No controla por heterogeneidad no observada.
+
+# Modelo de Efectos Fijos
+```{r}
+reg_fe <- plm(lngdp ~ capi + art + labor + Overall.Score, data = df, model = "within")
+summary(reg_fe)
+
+```
+
+- Controla por factores no observables que son constantes en el tiempo dentro de cada país.
+
+- Ideal si creemos que existen características no medidas (como instituciones o cultura) que afectan al PIB.
+
+- Se enfoca en las variaciones dentro de cada país.
+
+# Modelo de Efectos Aleatorios
+```{r}
+reg_re <- plm(lngdp ~ capi + art + labor + Overall.Score, 
+              data = df, 
+              model = "random", 
+              random.method = "amemiya")
+summary(reg_re)
+
+```
+- Supone que las diferencias no observadas entre países no están correlacionadas con las variables explicativas.
+
+- Más eficiente que FE si los supuestos se cumplen.
+
+# Comparación de modelos
+## Test F: ¿Pooled vs. Efectos Fijos?
+```{r}
+pFtest(reg_fe, reg_pool)
+
+```
+- H₀: El modelo Pooled es adecuado (sin efectos individuales).
+
+- H₁: El modelo de Efectos Fijos es preferido.
+
+- Si el valor p es bajo (p < 0.05), se rechaza H₀ ⇒ se prefiere Efectos Fijos.
+
+## Test de Hausman: ¿Efectos Aleatorios vs. Efectos Fijos?
+```{r}
+phtest(reg_re, reg_fe)
+
+```
+
+- H₀: El modelo de Efectos Aleatorios es consistente.
+
+- H₁: El modelo de Efectos Fijos es preferido.
+
+- Si el valor p es bajo ⇒ hay correlación entre efectos no observados y las variables ⇒ usar FE.
+
+# Conclusión
+- Si ambos tests favorecen el modelo de Efectos Fijos, se concluye que existen efectos específicos de país que deben ser controlados.
+
+- Si el Test de Hausman no rechaza H₀, Efectos Aleatorios es más eficiente.
+
+- La elección final del modelo depende del resultado de las pruebas y del objetivo del análisis.
+
+
+

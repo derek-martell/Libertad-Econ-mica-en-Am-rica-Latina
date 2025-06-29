@@ -1,0 +1,682 @@
+---
+title: "Análisis Estadístico"
+author: "Derek Martell"
+output: pdf_document
+---
+
+# Descargamos librerías y la base de datos ya limpia
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(error = TRUE)
+library(tidyverse)
+library(plm)
+library(readxl)
+library(psych)
+library(naniar)
+library(car)
+library(corrplot)
+library(ggplot2)
+library(gridExtra)
+    
+#EN DATA SE COPIA LA DATA NUEVA
+path ="C:/eco-poli/TRABAJO FINAL/CÓDIGO EN R/merged_df_sin_ecuador.csv"
+
+df = read.csv(path)
+    
+```
+
+
+# Ahora vamos a analizar 
+```{r}
+# Verificar nombres de variables
+colnames(df)
+
+# Revisar la estructura
+glimpse(df)
+
+# Número de países y años
+length(unique(df$Country))
+length(unique(df$Index.Year))
+```
+
+# 2. Estadísticos descriptivos
+```{r}
+describe(df[, c("capi", "art", "labor", "gdp", "Overall.Score")])
+
+```
+
+# 3. Visualización de distribuciones
+```{r}
+df %>%
+  pivot_longer(cols = c(capi, art, labor, gdp, Overall.Score)) %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  facet_wrap(~name, scales = "free") +
+  theme_minimal()
+
+```
+# Ralizamos los test de normalidad
+```{r}
+shapiro.test(df$capi)  # Solo si n < 5000
+shapiro.test(df$art)
+shapiro.test(df$labor)
+shapiro.test(df$gdp)
+shapiro.test(df$Overall.Score)
+```
+
+
+# 4. Transformación logarítmica
+```{r}
+df <- df %>%
+  mutate(
+    ln_gdp = log(gdp),
+    ln_capi = log(capi),
+    ln_art = log(art + 1),     # Se suma 1 en caso de ceros
+    ln_labor = log(labor),
+    ln_Overall.Score = log(Overall.Score)
+  )
+```
+
+
+# 5. Visualización de distribuciones luego de las transformaciones
+```{r}
+df %>%
+  pivot_longer(cols = c(ln_capi, ln_art, ln_labor, ln_gdp, ln_Overall.Score)) %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  facet_wrap(~name, scales = "free") +
+  theme_minimal()
+```
+# Realizamos el test de normalidad
+```{r}
+shapiro.test(df$ln_capi)  # Solo si n < 5000
+shapiro.test(df$ln_art)
+shapiro.test(df$ln_labor)
+shapiro.test(df$ln_gdp)
+shapiro.test(df$ln_Overall.Score)
+```
+
+
+# 6. Visualización de series de tiempo
+
+
+
+
+
+## 6.1. Visualización antes de la transformación
+
+```{r}
+ggplot(df, aes(x = Index.Year, y = gdp, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución del PIB per cápita (log)") +
+  theme_minimal()
+
+ggplot(df, aes(x = Index.Year, y = art, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución de los artículos per cápita (log)") +
+  theme_minimal()
+
+ggplot(df, aes(x = Index.Year, y = labor, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución del labor per cápita (log)") +
+  theme_minimal()
+
+ggplot(df, aes(x = Index.Year, y = capi, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución del capital per cápita (log)") +
+  theme_minimal()
+
+ggplot(df, aes(x = Index.Year, y = Overall.Score, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución del Overall.Score (log)") +
+  theme_minimal()
+```
+
+## 6.2. Visualización después de la transformación
+```{r}
+ggplot(df, aes(x = Index.Year, y = ln_gdp, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución del PIB per cápita (log)") +
+  theme_minimal()
+
+ggplot(df, aes(x = Index.Year, y = ln_art, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución de los artículos per cápita (log)") +
+  theme_minimal()
+
+ggplot(df, aes(x = Index.Year, y = ln_labor, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución del labor per cápita (log)") +
+  theme_minimal()
+
+ggplot(df, aes(x = Index.Year, y = ln_capi, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución del capital per cápita (log)") +
+  theme_minimal()
+
+ggplot(df, aes(x = Index.Year, y = ln_Overall.Score, color = Country)) +
+  geom_line() +
+  labs(title = "Evolución del Overall.Score (log)") +
+  theme_minimal()
+```
+
+
+# 7. Visualización para heterogeneidad
+
+##
+
+```{r}
+
+# install.packages("gplots") # Descomenta y ejecuta si no tienes gplots instalado
+library(gplots)
+library(dplyr) # Para usar el operador %>% si lo necesitas para otras operaciones
+# Lista de las variables de tu modelo que quieres visualizar
+
+
+variables_modelo <- c("gdp", "capi", "art", "labor", "Overall.Score")
+
+# Asumiendo que tu variable de tiempo en 'df' se llama 'year'.
+# ¡¡¡IMPORTANTE!!! Reemplaza 'df$year' si tu variable de tiempo tiene otro nombre.
+time_variable <- df$Index.Year # O df$tu_nombre_de_variable_de_tiempo
+
+# Bucle para generar un gráfico para cada variable
+for (var_name in variables_modelo) {
+  # Construye la fórmula: variable_actual ~ variable_de_tiempo
+  formula_str <- paste(var_name, "~ time_variable")
+
+  # Define el título del gráfico
+  plot_title <- paste("Heterogeneidad de", var_name, "a lo largo del tiempo")
+
+  # Define la etiqueta del eje Y (puedes personalizarla más si lo deseas)
+  ylab_text <- paste(var_name)
+
+  # Genera el gráfico
+  plotmeans(
+    as.formula(formula_str), # Convierte la cadena de texto a una fórmula
+    data = df,               # Usa tu dataframe df
+    main = plot_title,
+    xlab = "Período (Año)", # Puedes cambiar "Año" por "Período" si tu variable no son años
+    ylab = ylab_text,
+    connect = FALSE,         # Para no conectar los puntos con líneas (útil si los años no son consecutivos o si los grupos son discretos)
+    barwidth = 0.5,          # Ancho de las barras de los intervalos de confianza
+    col = "steelblue",       # Color de los puntos y barras
+    ccol = "darkblue"        # Color de las líneas que conectan la media (si connect=TRUE)
+  )
+}
+```
+
+
+
+## 7.1. Antes de la transformación
+
+```{r}
+boxplot(gdp ~ Country, data = df, main = "Distribución del PIB por país", las = 2)
+boxplot(art ~ Country, data = df, main = "Distribución de los artículos", las = 2)
+
+boxplot(labor ~ Country, data = df, main = "Distribución del trabajo", las = 2)
+
+boxplot(capi ~ Country, data = df, main = "Distribución del capital", las = 2)
+boxplot(Overall.Score ~ Country, data = df, main = "Distribución del Índice de Libertad", las = 2)
+```
+
+
+## 7.2. Después de la transformación (es decir en logaritmos)
+```{r}
+boxplot(ln_gdp ~ Country, data = df, main = "Distribución del PIB por país", las = 2)
+boxplot(ln_art ~ Country, data = df, main = "Distribución de los artículos", las = 2)
+boxplot(ln_labor ~ Country, data = df, main = "Distribución del trabajo", las = 2)
+boxplot(ln_capi ~ Country, data = df, main = "Distribución del capital", las = 2)
+boxplot(ln_Overall.Score ~ Country, data = df, main = "Distribución del Índice de Libertad", las = 2)
+```
+
+Con estos gráficos podemos intuir que vamos a tener que usar el modelo de efectos fijos.
+
+
+# 8. Correlación y colinealidad
+
+```{r}
+# Seleccionar las variables de interés
+data_for_pairs <- df %>%
+  select(ln_gdp, capi, art, labor, Overall.Score)
+
+# Crear el gráfico pairs básico
+pairs(data_for_pairs)
+
+```
+
+Vamos a ver la matriz de correlación, entre 
+```{r}
+
+library(dplyr); library(tidyr); library(ggplot2)
+# Matriz de correlación
+
+
+df %>%
+  select(ln_gdp, capi, art, labor, Overall.Score) %>%
+  cor() %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Var1") %>%
+  pivot_longer(cols = -Var1, names_to = "Var2", values_to = "value") %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = round(value, 2)), color = "white", size = 4) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0, limit = c(-1, 1), name = "Correlación") +
+  coord_fixed() +
+  labs(title = "Heatmap de Correlación", x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+# Se puede observar que hay una gran correlación entre ln_art y ln_labor
+
+
+# Matriz de correlación
+df %>%
+  select(ln_gdp, ln_capi, ln_art, ln_labor, ln_Overall.Score) %>%
+  cor() %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Var1") %>%
+  pivot_longer(cols = -Var1, names_to = "Var2", values_to = "value") %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = round(value, 2)), color = "white", size = 4) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0, limit = c(-1, 1), name = "Correlación") +
+  coord_fixed() +
+  labs(title = "Heatmap de Correlación", x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+
+
+#Se mantiene la correlación con los logaritmos
+
+
+# Por lo que borramos la variable art, y vemos que desaparece este problema de correlación 
+# entre variables, luego haremos lo mismo con las pruebas VIF, y con la eliminación
+# de una variable solucionaremos el problema
+
+# Matriz de correlación, sin art
+df %>%
+  select(ln_gdp, capi, labor, Overall.Score) %>%
+  cor() %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Var1") %>%
+  pivot_longer(cols = -Var1, names_to = "Var2", values_to = "value") %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = round(value, 2)), color = "white", size = 4) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0, limit = c(-1, 1), name = "Correlación") +
+  coord_fixed() +
+  labs(title = "Heatmap de Correlación", x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+# Matriz de correlación, sin art (con log)
+df %>%
+  select(ln_gdp, ln_capi, ln_labor, ln_Overall.Score) %>%
+  cor() %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Var1") %>%
+  pivot_longer(cols = -Var1, names_to = "Var2", values_to = "value") %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = round(value, 2)), color = "white", size = 4) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0, limit = c(-1, 1), name = "Correlación") +
+  coord_fixed() +
+  labs(title = "Heatmap de Correlación", x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), plot.title = element_text(hjust = 0.5, face = "bold"))
+  
+
+
+# Matriz de correlación sin labor
+
+df %>%
+  select(ln_gdp, capi,art, Overall.Score) %>%
+  cor() %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Var1") %>%
+  pivot_longer(cols = -Var1, names_to = "Var2", values_to = "value") %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = round(value, 2)), color = "white", size = 4) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0, limit = c(-1, 1), name = "Correlación") +
+  coord_fixed() +
+  labs(title = "Heatmap de Correlación", x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+#Con logaritmos
+df %>%
+  select(ln_gdp, ln_capi,ln_art, ln_Overall.Score) %>%
+  cor() %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Var1") %>%
+  pivot_longer(cols = -Var1, names_to = "Var2", values_to = "value") %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = round(value, 2)), color = "white", size = 4) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0, limit = c(-1, 1), name = "Correlación") +
+  coord_fixed() +
+  labs(title = "Heatmap de Correlación", x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), plot.title = element_text(hjust = 0.5, face = "bold"))
+ 
+```
+
+
+
+
+# Hacemos la prubea de Varianza Inflada (VIF)
+
+```{r}
+
+# Primero mantenemos todas las variabkes
+
+# VIF (con todos sin la transforamción del logaritmo)
+modelo_vif <- lm(gdp ~ capi + art + labor + Overall.Score, data = df)
+vif(modelo_vif)
+
+# VIF (con la condición del logaritmo)
+modelo_vif <- lm(ln_gdp ~ capi + art + labor + Overall.Score, data = df)
+vif(modelo_vif)
+
+# Observamos que están demasiado infladas, labor y art (son mayores a 5). Por lo que 
+# Con esto veremos que es necesario eliminar una de las variables, para que la regresión
+# no pierda significancia
+
+# VIF (quitamos a labor, ya que está muy correlacionada con art)
+modelo_vif <- lm(ln_gdp ~ capi + art  + Overall.Score, data = df)
+vif(modelo_vif)
+ # Con logaritmos
+modelo_vif <- lm(ln_gdp ~ ln_capi + ln_art  + ln_Overall.Score, data = df)
+vif(modelo_vif)
+
+
+# VIF (quitamos a art, ya que está muy correlacionada con labor)
+modelo_vif <- lm(ln_gdp ~ capi + labor + Overall.Score, data = df)
+vif(modelo_vif)
+ # Con logaritmos
+modelo_vif <- lm(ln_gdp ~ ln_capi + ln_labor  + ln_Overall.Score, data = df)
+vif(modelo_vif)
+
+# Con esto vemos que se soluciona el problema de correlación entre las variables exógenas
+```
+
+
+
+# Hacemos las regresiones
+
+## Con labor
+### Pooled
+```{r}
+knitr::opts_chunk$set(error = TRUE)
+reg_pool = plm(ln_gdp ~ capi+ labor+ Overall.Score, data = df, model = "pooling")
+summary(reg_pool)
+
+
+```
+
+
+### Regresión de efectos fijos
+```{r}
+
+#ESTIMACIÖN DE EFECTOS FIJOS
+reg_fe = plm(ln_gdp ~ capi+ labor+ Overall.Score, data = df, model = "within")
+summary(reg_fe)
+
+
+```
+
+### Efectos Aleatorios
+```{r}
+
+#ALEATORIOS
+reg_re = plm(ln_gdp ~ capi+ labor+ Overall.Score, data = df, model = "random")
+# En caso no corra, cambiamos de método
+#reg_re <- plm(gdp ~ capi + labor + Overall.Score, 
+#              data = df, 
+#              model = "random", 
+#              random.method = "amemiya")
+summary(reg_re)
+
+
+```
+
+# Validación del modelo
+
+```{r}
+
+#HIpotesis nula = se prefiere el modelo Pooled
+#Hipotesis alternativa= se prefiere el modelo de efectod fijos
+pFtest(reg_fe, reg_pool)
+#Se rechaza la hipótesis nula
+
+#Test de Hausman
+phtest(reg_re, reg_fe)
+#HA = REF_FE
+#HO = REG_R
+```
+
+#Graficos
+
+## Gráfico de residuos
+### QQNORM
+```{r}
+
+# --- Gráfico Q-Q Normal para el modelo Pooled ---
+# Extraer los residuos del modelo Pooled
+residuos_pool <- residuals(reg_pool)
+
+# Crear el gráfico Q-Q normal
+qqnorm(residuos_pool, main = "Q-Q Normal de Residuos (Pooled)")
+qqline(residuos_pool, col = "red") # Agrega la línea de referencia
+
+# --- Gráfico Q-Q Normal para el modelo de Efectos Fijos ---
+# Extraer los residuos del modelo de Efectos Fijos
+residuos_fe <- residuals(reg_fe)
+
+# Crear el gráfico Q-Q normal
+qqnorm(residuos_fe, main = "Q-Q Normal de Residuos (Efectos Fijos)")
+qqline(residuos_fe, col = "blue") # Puedes usar un color diferente si quieres
+
+# --- Gráfico Q-Q Normal para el modelo de Efectos Aleatorios ---
+# Extraer los residuos del modelo de Efectos Aleatorios
+residuos_re <- residuals(reg_re)
+
+# Crear el gráfico Q-Q normal
+qqnorm(residuos_re, main = "Q-Q Normal de Residuos (Efectos Aleatorios)")
+qqline(residuos_re, col = "green") # Otro color para diferenciarlos
+```
+
+### Residuos
+
+```{r}
+
+library(ggplot2) # Para gráficos más bonitos
+
+# Para el modelo Pooled
+library(broom)
+aug_pool <- augment(reg_pool, df) # 'df' es tu conjunto de datos original
+ggplot(aug_pool, aes(.fitted, .resid)) +
+   geom_point() +
+   geom_hline(yintercept = 0, lty = 2, color = "red") +
+   labs(title = "Residuos vs. Valores Ajustados (Pooled)")
+
+# Para el modelo de Efectos Fijos
+aug_pool <- augment(reg_fe, df) # 'df' es tu conjunto de datos original
+ggplot(aug_pool, aes(.fitted, .resid)) +
+   geom_point() +
+   geom_hline(yintercept = 0, lty = 2, color = "red") +
+   labs(title = "Residuos vs. Valores Ajustados (Efectos Fijos)")
+
+# Para el modelo de Efectos Aleatorios
+aug_pool <- augment(reg_re, df) # 'df' es tu conjunto de datos original
+ggplot(aug_pool, aes(.fitted, .resid)) +
+   geom_point() +
+   geom_hline(yintercept = 0, lty = 2, color = "red") +
+   labs(title = "Residuos vs. Valores Ajustados (Efectos Aleatorios)")
+
+```
+
+## Valores predichos vs valores residuales
+
+```{r}
+
+# Para el modelo Pooled
+plot(df$gdp, reg_pool$fitted.values,
+     xlab = "GDP Real", ylab = "GDP Predicho",
+     main = "Real vs. Predicho (Pooled)")
+abline(a = 0, b = 1, col = "blue", lty = 2) # Línea de 45 grados
+
+# Para el modelo de Efectos Fijos
+plot(df$gdp, reg_fe$fitted.values,
+     xlab = "GDP Real", ylab = "GDP Predicho",
+     main = "Real vs. Predicho (Efectos Fijos)")
+abline(a = 0, b = 1, col = "blue", lty = 2)
+
+# Para el modelo de Efectos Aleatorios
+plot(df$gdp, reg_re$fitted.values,
+     xlab = "GDP Real", ylab = "GDP Predicho",
+     main = "Real vs. Predicho (Efectos Aleatorios)")
+abline(a = 0, b = 1, col = "blue", lty = 2)
+```
+
+
+
+
+
+## Con art
+### Pooled
+```{r}
+
+reg_pool = plm(ln_gdp ~ capi+ art+ Overall.Score, data = df, model = "pooling")
+summary(reg_pool)
+
+
+```
+
+
+### Regresión de efectos fijos
+```{r}
+#ESTIMACIÖN DE EFECTOS FIJOS
+reg_fe = plm(ln_gdp ~ capi+ art+ Overall.Score, data = df, model = "within")
+summary(reg_fe)
+
+
+```
+
+### Efectos Aleatorios
+```{r}
+#ALEATORIOS
+reg_re = plm(ln_gdp ~ capi+art+Overall.Score, data = df, model = "random")
+
+# En caso no corra, cambiamos de método
+
+#reg_re <- plm(gdp ~ capi + art + Overall.Score, 
+#              data = df, 
+#              model = "random", 
+#              random.method = "amemiya")
+summary(reg_re)
+
+
+```
+
+# Validación del modelo
+
+```{r}
+#HIpotesis nula = se prefiere el modelo Pooled
+#Hipotesis alternativa= se prefiere el modelo de efectod fijos
+pFtest(reg_fe, reg_pool)
+#Se rechaza la hipótesis nula
+
+#Test de Hausman
+phtest(reg_re, reg_fe)
+#HA = REF_FE
+#HO = REG_R
+```
+
+#Graficos
+
+### QQNORM
+```{r}
+# --- Gráfico Q-Q Normal para el modelo Pooled ---
+# Extraer los residuos del modelo Pooled
+residuos_pool <- residuals(reg_pool)
+
+# Crear el gráfico Q-Q normal
+qqnorm(residuos_pool, main = "Q-Q Normal de Residuos (Pooled)")
+qqline(residuos_pool, col = "red") # Agrega la línea de referencia
+
+# --- Gráfico Q-Q Normal para el modelo de Efectos Fijos ---
+# Extraer los residuos del modelo de Efectos Fijos
+residuos_fe <- residuals(reg_fe)
+
+# Crear el gráfico Q-Q normal
+qqnorm(residuos_fe, main = "Q-Q Normal de Residuos (Efectos Fijos)")
+qqline(residuos_fe, col = "blue") # Puedes usar un color diferente si quieres
+
+# --- Gráfico Q-Q Normal para el modelo de Efectos Aleatorios ---
+# Extraer los residuos del modelo de Efectos Aleatorios
+residuos_re <- residuals(reg_re)
+
+# Crear el gráfico Q-Q normal
+qqnorm(residuos_re, main = "Q-Q Normal de Residuos (Efectos Aleatorios)")
+qqline(residuos_re, col = "green") # Otro color para diferenciarlos
+```
+
+### Gráfico de residuos
+
+```{r}
+library(ggplot2) # Para gráficos más bonitos
+
+# Para el modelo Pooled
+library(broom)
+aug_pool <- augment(reg_pool, df) # 'df' es tu conjunto de datos original
+ggplot(aug_pool, aes(.fitted, .resid)) +
+   geom_point() +
+   geom_hline(yintercept = 0, lty = 2, color = "red") +
+   labs(title = "Residuos vs. Valores Ajustados (Pooled)")
+
+# Para el modelo de Efectos Fijos
+aug_pool <- augment(reg_fe, df) # 'df' es tu conjunto de datos original
+ggplot(aug_pool, aes(.fitted, .resid)) +
+   geom_point() +
+   geom_hline(yintercept = 0, lty = 2, color = "red") +
+   labs(title = "Residuos vs. Valores Ajustados (Efectos Fijos)")
+
+# Para el modelo de Efectos Aleatorios
+aug_pool <- augment(reg_re, df) # 'df' es tu conjunto de datos original
+ggplot(aug_pool, aes(.fitted, .resid)) +
+   geom_point() +
+   geom_hline(yintercept = 0, lty = 2, color = "red") +
+   labs(title = "Residuos vs. Valores Ajustados (Efectos Aleatorios)")
+
+```
+
+## Valores predichos vs valores residuales
+
+```{r}
+# Para el modelo Pooled
+plot(df$gdp, reg_pool$fitted.values,
+     xlab = "GDP Real", ylab = "GDP Predicho",
+     main = "Real vs. Predicho (Pooled)")
+abline(a = 0, b = 1, col = "blue", lty = 2) # Línea de 45 grados
+
+# Para el modelo de Efectos Fijos
+plot(df$gdp, reg_fe$fitted.values,
+     xlab = "GDP Real", ylab = "GDP Predicho",
+     main = "Real vs. Predicho (Efectos Fijos)")
+abline(a = 0, b = 1, col = "blue", lty = 2)
+
+# Para el modelo de Efectos Aleatorios
+plot(df$gdp, reg_re$fitted.values,
+     xlab = "GDP Real", ylab = "GDP Predicho",
+     main = "Real vs. Predicho (Efectos Aleatorios)")
+abline(a = 0, b = 1, col = "blue", lty = 2)
+```
+
+
